@@ -3,7 +3,7 @@ import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './Layout';
 import PurchaseTable from '../Reel Stock/Purchase';
-import Purchase1 from '../Gum & Ink /Purchase';
+import Purchase1 from '../gum - Ink /Purchase';
 import PurchaseForm from '../Reel Stock/PurchaseForm';
 import Usage from '../Reel Stock/Usage';
 
