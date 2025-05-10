@@ -1,116 +1,82 @@
-const User = require('../models/userModel');
-const db = require('../config/db');
-const bcrypt = require('bcryptjs'); 
-const axios = require('axios');
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import { User } from "../models/index.js";
+import dotenv from "dotenv";
 
+dotenv.config();
 
-const fetchAllUsers = (req, res) => {
-  const query = 'SELECT * FROM users';  
+// Register
+export const registerUser = async (req, res) => {
+  try {
+    const { username, mobile_number, password, role } = req.body;
 
-  // Execute the query
-  db.query(query, (err, results) => {
-    if (err) {
-      // Log error if query fails
-      console.error('❌ Error fetching users:', err);
-      return res.status(500).json({ message: 'Error fetching users' });
-    }
+    const existingUser = await User.findOne({ where: { mobile_number } });
+    if (existingUser)
+      return res.status(400).json({ message: "User already exists." });
 
-    // If no users are found
-    if (results.length === 0) {
-      return res.status(404).json({ message: 'No users found' });
-    }
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Send the results back in the response
-    console.log('Fetched users:', results);
-    return res.json(results);
-  });
-};
-
-
-const loginUser = (req, res) => {
-  const { mobile_number, password } = req.body;
-  console.log(req.body, "Received data");
-
-  // Query to fetch the user by mobile_number
-  const query = 'SELECT * FROM users WHERE mobile_number = ?';
-  db.query(query, [mobile_number], (err, results) => {
-    if (err) {
-      console.error('❌ Error during login:', err);
-      return res.status(500).json({ message: 'Internal server error' });
-    }
-
-    // Check if no user is found with the provided mobile_number
-    if (results.length === 0) {
-      return res.status(401).json({ message: 'Invalid mobile number or password' });
-    }
-
-    const user = results[0];  // Get the first user from results
-
-    // Compare the provided password with the stored hashed password
-    bcrypt.compare(password, user.password, (err, isMatch) => {
-      if (err) {
-        console.error('❌ Error during password comparison:', err);
-        return res.status(500).json({ message: 'Internal server error' });
-      }
-
-      if (!isMatch) {
-        return res.status(401).json({ message: 'Invalid mobile number or password' });
-      }
-
-      // Success - password matches
-      return res.status(200).json({
-        message: 'Login successful',
-        user: user  // You can omit sensitive details like password if needed
-      });
+    const user = await User.create({
+      username,
+      mobile_number,
+      password: hashedPassword,
+      role,
     });
-  });
+
+    return res
+      .status(201)
+      .json({ message: "User registered successfully.", user });
+  } catch (err) {
+    console.error("Register Error:", err);
+    res.status(500).json({ message: "Server Error" });
+  }
 };
 
+// Login
+export const loginUser = async (req, res) => {
+  try {
+    const { mobile_number, password } = req.body;
 
+    const user = await User.findOne({ where: { mobile_number } });
 
-const registerUser = (req, res) => {
-  const { name, mobile_number, password } = req.body;
-  
-  console.log(req.body, "Received registration details");
+    if (!user) return res.status(400).json({ message: "Invalid credentials." });
 
-  // Check if the mobile number already exists in the database
-  const checkQuery = 'SELECT * FROM users WHERE mobile_number = ?';
-  db.query(checkQuery, [mobile_number], (err, results) => {
-    if (err) {
-      console.error('❌ Error checking mobile number:', err);
-      return res.status(500).json({ message: 'Internal server error' });
-    }
+    const isMatch = await bcrypt.compare(password, user.password);
 
-    if (results.length > 0) {
-      // Mobile number already exists
-      return res.status(400).json({ message: 'Mobile number is already registered' });
-    }
+    if (!isMatch)
+      return res.status(400).json({ message: "Invalid credentials." });
 
-    // Hash the password before storing it
-    bcrypt.hash(password, 10, (err, hashedPassword) => {
-      if (err) {
-        console.error('❌ Error hashing password:', err);
-        return res.status(500).json({ message: 'Internal server error' });
-      }
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
-      // Insert the new user into the database
-      const insertQuery = 'INSERT INTO users (name, mobile_number, password) VALUES (?, ?, ?)';
-      db.query(insertQuery, [name, mobile_number, hashedPassword], (err, results) => {
-        if (err) {
-          console.error('❌ Error inserting user:', err);
-          return res.status(500).json({ message: 'Internal server error' });
-        }
-
-        // Respond with success
-        return res.status(201).json({
-          message: 'User registered successfully',
-          user: { id: results.insertId, name, mobile_number }
-        });
-      });
+    return res.status(200).json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        mobile_number: user.mobile_number,
+        role: user.role,
+      },
     });
-  });
+  } catch (err) {
+    console.error("Login Error:", err);
+    res.status(500).json({ message: "Server Error" });
+  }
 };
 
+// Get all users (admin only)
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.findAll({ attributes: { exclude: ["password"] } });
+    res.status(200).json({ message: "Users retrieved successfully", users });
+  } catch (err) {
+    console.error("Get Users Error:", err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
 
 // const sendOTP = async (req, res) => {
 //   const { phone } = req.body;
@@ -177,6 +143,3 @@ let otpStore = {};
 //     return res.status(400).json({ message: 'Invalid OTP' });
 //   }
 // };
-
-
-module.exports = { fetchAllUsers , loginUser, registerUser, sendOTP, verifyOTP};
